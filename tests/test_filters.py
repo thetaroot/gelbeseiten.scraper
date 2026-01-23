@@ -84,18 +84,28 @@ class TestLeadFilter:
         assert "quality" in result.reason
 
     # Pflichtfelder Filter
-    def test_require_phone(self, strict_filter):
+    def test_require_phone(self):
         """Test: Telefon erforderlich."""
+        # Filter ohne Quality-Score-Minimum, nur Phone-Check
+        config = FilterConfig(
+            include_no_website=True,
+            include_old_website=True,
+            include_modern_website=False,
+            min_quality_score=0,  # Kein Quality-Score-Filter
+            require_phone=True
+        )
+        phone_filter = LeadFilter(config)
+
         # Ohne Telefon
         lead_no_phone = create_test_lead(telefon=None)
-        result = strict_filter.should_include(lead_no_phone)
+        result = phone_filter.should_include(lead_no_phone)
         assert result.included is False
         assert "phone" in result.reason
 
         # Mit Telefon
         lead_with_phone = create_test_lead(telefon="+49 30 12345")
-        result = strict_filter.should_include(lead_with_phone)
-        # Könnte noch am Score scheitern, aber nicht am Telefon
+        result = phone_filter.should_include(lead_with_phone)
+        assert result.included is True
 
     def test_require_email(self):
         """Test: E-Mail erforderlich."""

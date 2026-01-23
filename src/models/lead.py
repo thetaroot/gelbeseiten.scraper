@@ -10,6 +10,8 @@ from datetime import datetime
 from enum import Enum
 import re
 
+from config.settings import DataSource
+
 
 class WebsiteStatus(str, Enum):
     """Status der Website-Analyse."""
@@ -96,9 +98,14 @@ class Lead(BaseModel):
     oeffnungszeiten: Optional[Dict[str, str]] = None
 
     # Meta
-    gelbe_seiten_url: str
+    gelbe_seiten_url: Optional[str] = None  # Optional für Google Maps Leads
     gelbe_seiten_id: Optional[str] = None
     scrape_datum: datetime = Field(default_factory=datetime.now)
+
+    # Multi-Source Support
+    quellen: List[DataSource] = Field(default_factory=lambda: [DataSource.GELBE_SEITEN])
+    google_maps_place_id: Optional[str] = None
+    google_maps_url: Optional[str] = None
 
     @field_validator("telefon", "fax")
     @classmethod
@@ -191,7 +198,7 @@ class Lead(BaseModel):
 
     def to_export_dict(self) -> Dict[str, Any]:
         """Konvertiert Lead in Export-freundliches Dictionary."""
-        return {
+        result = {
             "firmenname": self.firmenname,
             "branche": self.branche,
             "branchen_zusatz": self.branchen_zusatz,
@@ -210,10 +217,21 @@ class Lead(BaseModel):
             },
             "bewertung": self.bewertung,
             "bewertung_anzahl": self.bewertung_anzahl,
+            "oeffnungszeiten": self.oeffnungszeiten,
             "qualitaet_score": self.qualitaet_score,
-            "gelbe_seiten_url": self.gelbe_seiten_url,
+            "quellen": [q.value for q in self.quellen],
             "scrape_datum": self.scrape_datum.isoformat()
         }
+
+        # Quellenspezifische URLs
+        if self.gelbe_seiten_url:
+            result["gelbe_seiten_url"] = self.gelbe_seiten_url
+        if self.google_maps_url:
+            result["google_maps_url"] = self.google_maps_url
+        if self.google_maps_place_id:
+            result["google_maps_place_id"] = self.google_maps_place_id
+
+        return result
 
 
 class RawListing(BaseModel):
@@ -227,6 +245,13 @@ class RawListing(BaseModel):
     website_url: Optional[str] = None
     bewertung: Optional[float] = None
     bewertung_anzahl: Optional[int] = None
+
+    # Quellenangabe
+    quelle: DataSource = DataSource.GELBE_SEITEN
+
+    # Google Maps spezifisch
+    place_id: Optional[str] = None
+    oeffnungszeiten: Optional[Dict[str, str]] = None
 
 
 class ScrapingResult(BaseModel):

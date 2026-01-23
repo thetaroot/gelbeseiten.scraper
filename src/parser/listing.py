@@ -178,7 +178,30 @@ class ListingParser:
                     url = elem.get("href")
                 elif elem.find("a"):
                     url = elem.find("a").get("href")
+                else:
+                    # Prüfe ob Parent ein <a> mit href ist (z.B. <a><h2>Name</h2></a>)
+                    parent = elem.parent
+                    if parent and parent.name == "a" and parent.get("href"):
+                        url = parent.get("href")
                 break
+
+        # Falls URL immer noch None, suche nach Detail-Link im Article
+        if name and not url:
+            # Suche nach dem Haupt-Link zum Firmeneintrag
+            link_selectors = [
+                "a[href*='/gsbiz/']",
+                "a[data-realid]",
+                "a[data-tnid]",
+                "a[href*='gelbeseiten.de']"
+            ]
+            for selector in link_selectors:
+                link = article.select_one(selector)
+                if link and link.get("href"):
+                    href = link.get("href")
+                    # Nur Detail-Links, keine externen oder Redirect-Links
+                    if "/gsbiz/" in href or (href.startswith("/") and "redirect" not in href):
+                        url = href
+                        break
 
         # URL normalisieren
         if url and not url.startswith("http"):

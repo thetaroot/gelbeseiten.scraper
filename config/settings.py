@@ -23,6 +23,13 @@ class OutputFormat(str, Enum):
     CSV = "csv"
 
 
+class DataSource(str, Enum):
+    """Datenquellen für Leads."""
+    GELBE_SEITEN = "gelbe_seiten"
+    GOOGLE_MAPS = "google_maps"
+    MERGED = "merged"  # Aus mehreren Quellen kombiniert
+
+
 @dataclass
 class RateLimitConfig:
     """Konfiguration für Rate Limiting."""
@@ -34,6 +41,14 @@ class RateLimitConfig:
     gs_pause_min_duration: float = 15.0
     gs_pause_max_duration: float = 30.0
     gs_max_requests_per_minute: int = 15
+
+    # Google Maps (konservativ)
+    gm_min_delay: float = 3.0
+    gm_max_delay: float = 6.0
+    gm_pause_every_n_requests: int = 15
+    gm_pause_min_duration: float = 20.0
+    gm_pause_max_duration: float = 40.0
+    gm_max_requests_per_minute: int = 10
 
     # Externe Websites (lockerer)
     ext_min_delay: float = 1.0
@@ -94,6 +109,69 @@ class ExportConfig:
 
 
 @dataclass
+class GoogleMapsConfig:
+    """Konfiguration für Google Maps Scraping."""
+
+    enabled: bool = True
+    max_results_per_search: int = 100
+    use_browser: bool = True
+    browser_headless: bool = True
+    scroll_pause_time: float = 1.5
+    max_scroll_attempts: int = 50
+
+
+@dataclass
+class ProxyConfig:
+    """Konfiguration für Proxy-Rotation."""
+
+    enabled: bool = False
+    proxy_file: Optional[str] = None
+    rotate_every_n_requests: int = 10
+    max_failures_before_block: int = 5
+
+
+@dataclass
+class AggregatorConfig:
+    """Konfiguration für Lead-Aggregation/Deduplizierung."""
+
+    phone_match_weight: float = 1.0
+    name_match_weight: float = 0.8
+    address_match_weight: float = 0.6
+    min_similarity_threshold: float = 0.85
+    prefer_newer_data: bool = True
+
+
+@dataclass
+class StealthConfig:
+    """
+    Stealth-Modus für sicheres Scraping ohne Proxy.
+
+    Simuliert menschliches Verhalten durch lange, zufällige Pausen
+    und begrenzte Request-Raten. Ideal für längere Scraping-Sessions
+    ohne Risiko eines IP-Bans.
+    """
+
+    enabled: bool = False
+
+    # Delays zwischen Requests (Sekunden)
+    min_delay: float = 30.0
+    max_delay: float = 90.0
+
+    # Pausen ("Kaffeepausen") zur Simulation menschlichen Verhaltens
+    requests_before_break: int = 12
+    break_min_duration: float = 180.0   # 3 Minuten
+    break_max_duration: float = 480.0   # 8 Minuten
+
+    # Harte Limits
+    max_requests_per_hour: int = 50
+    max_session_duration_minutes: int = 180  # 3 Stunden
+
+    # Zusätzliche Sicherheit
+    randomize_scroll_speed: bool = True
+    simulate_reading_time: bool = True  # Wartet auf Seite wie ein Mensch
+
+
+@dataclass
 class Settings:
     """Hauptkonfiguration - kombiniert alle Teilkonfigurationen."""
 
@@ -106,11 +184,18 @@ class Settings:
     # Website-Check
     website_check_depth: WebsiteCheckDepth = WebsiteCheckDepth.NORMAL
 
+    # Datenquellen
+    sources: List[DataSource] = field(default_factory=lambda: [DataSource.GELBE_SEITEN])
+
     # Teilkonfigurationen
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     scraper: ScraperConfig = field(default_factory=ScraperConfig)
     filter: FilterConfig = field(default_factory=FilterConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
+    google_maps: GoogleMapsConfig = field(default_factory=GoogleMapsConfig)
+    proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    aggregator: AggregatorConfig = field(default_factory=AggregatorConfig)
+    stealth: StealthConfig = field(default_factory=StealthConfig)
 
     # Logging
     verbose: bool = False
@@ -127,15 +212,33 @@ class Settings:
         website_check: str = "normal",
         min_quality: int = 0,
         include_modern: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        sources: str = "gelbe-seiten",
+        use_proxy: bool = False,
+        proxy_file: Optional[str] = None,
+        headless: bool = True
     ) -> "Settings":
         """Erstellt Settings aus CLI-Argumenten."""
+
+        # Datenquellen parsen
+        source_list = []
+        sources_lower = sources.lower()
+        if sources_lower == "all":
+            source_list = [DataSource.GELBE_SEITEN, DataSource.GOOGLE_MAPS]
+        elif "gelbe" in sources_lower:
+            source_list.append(DataSource.GELBE_SEITEN)
+        if "google" in sources_lower or "maps" in sources_lower:
+            if DataSource.GOOGLE_MAPS not in source_list:
+                source_list.append(DataSource.GOOGLE_MAPS)
+        if not source_list:
+            source_list = [DataSource.GELBE_SEITEN]
 
         settings = cls(
             branche=branche,
             stadt=stadt,
             max_leads=limit,
             website_check_depth=WebsiteCheckDepth(website_check),
+            sources=source_list,
             verbose=verbose
         )
 
@@ -147,6 +250,14 @@ class Settings:
         # Filter-Konfiguration
         settings.filter.min_quality_score = min_quality
         settings.filter.include_modern_website = include_modern
+
+        # Google Maps Konfiguration
+        settings.google_maps.enabled = DataSource.GOOGLE_MAPS in source_list
+        settings.google_maps.browser_headless = headless
+
+        # Proxy-Konfiguration
+        settings.proxy.enabled = use_proxy
+        settings.proxy.proxy_file = proxy_file
 
         return settings
 

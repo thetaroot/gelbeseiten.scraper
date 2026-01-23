@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from threading import Lock
 from enum import Enum
 
-from config.settings import RateLimitConfig
+from config.settings import RateLimitConfig, StealthConfig
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class DomainType(str, Enum):
     """Klassifizierung von Domains für unterschiedliche Rate Limits."""
     GELBE_SEITEN = "gelbe_seiten"
+    GOOGLE_MAPS = "google_maps"
     EXTERNAL = "external"
 
 
@@ -67,8 +68,11 @@ class RateLimiter:
 
     def _classify_domain(self, domain: str) -> DomainType:
         """Klassifiziert eine Domain für Rate Limiting."""
-        if "gelbeseiten.de" in domain.lower():
+        domain_lower = domain.lower()
+        if "gelbeseiten.de" in domain_lower:
             return DomainType.GELBE_SEITEN
+        if "google.com" in domain_lower or "google.de" in domain_lower:
+            return DomainType.GOOGLE_MAPS
         return DomainType.EXTERNAL
 
     def _calculate_delay(self, domain_type: DomainType, state: DomainState) -> float:
@@ -81,6 +85,9 @@ class RateLimiter:
         if domain_type == DomainType.GELBE_SEITEN:
             min_delay = self._config.gs_min_delay
             max_delay = self._config.gs_max_delay
+        elif domain_type == DomainType.GOOGLE_MAPS:
+            min_delay = self._config.gm_min_delay
+            max_delay = self._config.gm_max_delay
         else:
             min_delay = self._config.ext_min_delay
             max_delay = self._config.ext_max_delay
@@ -99,12 +106,21 @@ class RateLimiter:
 
     def _should_take_long_pause(self, domain_type: DomainType, state: DomainState) -> bool:
         """Prüft ob eine längere Pause eingelegt werden soll."""
-        if domain_type != DomainType.GELBE_SEITEN:
+        if domain_type == DomainType.GELBE_SEITEN:
+            pause_every = self._config.gs_pause_every_n_requests
+        elif domain_type == DomainType.GOOGLE_MAPS:
+            pause_every = self._config.gm_pause_every_n_requests
+        else:
             return False
-        return state.request_count > 0 and state.request_count % self._config.gs_pause_every_n_requests == 0
+        return state.request_count > 0 and state.request_count % pause_every == 0
 
-    def _get_long_pause_duration(self) -> float:
+    def _get_long_pause_duration(self, domain_type: DomainType = DomainType.GELBE_SEITEN) -> float:
         """Gibt die Dauer einer langen Pause zurück."""
+        if domain_type == DomainType.GOOGLE_MAPS:
+            return random.uniform(
+                self._config.gm_pause_min_duration,
+                self._config.gm_pause_max_duration
+            )
         return random.uniform(
             self._config.gs_pause_min_duration,
             self._config.gs_pause_max_duration
@@ -143,7 +159,7 @@ class RateLimiter:
 
             # Prüfe ob lange Pause nötig
             if self._should_take_long_pause(domain_type, state):
-                pause_duration = self._get_long_pause_duration()
+                pause_duration = self._get_long_pause_duration(domain_type)
                 logger.info(
                     f"Periodische Pause nach {state.request_count} Requests: {pause_duration:.1f}s"
                 )
@@ -280,3 +296,152 @@ def human_delay(min_seconds: float = 1.0, max_seconds: float = 3.0) -> float:
     delay = random.uniform(min_seconds, max_seconds)
     time.sleep(delay)
     return delay
+
+
+class StealthRateLimiter(RateLimiter):
+    """
+    Erweiterter Rate Limiter für sicheres Scraping ohne Proxy.
+
+    Verwendet sehr konservative Delays und simuliert menschliches
+    Verhalten durch zufällige "Kaffeepausen". Ideal für lange
+    Scraping-Sessions ohne Risiko eines IP-Bans.
+    """
+
+    def __init__(
+        self,
+        config: Optional[RateLimitConfig] = None,
+        stealth_config: Optional[StealthConfig] = None
+    ):
+        super().__init__(config)
+        self._stealth = stealth_config or StealthConfig()
+        self._session_start = time.time()
+        self._hourly_request_count = 0
+        self._hour_start = time.time()
+
+    def _check_hourly_limit(self) -> bool:
+        """Prüft ob das stündliche Limit erreicht wurde."""
+        now = time.time()
+
+        # Reset nach einer Stunde
+        if now - self._hour_start >= 3600:
+            self._hour_start = now
+            self._hourly_request_count = 0
+            return False
+
+        return self._hourly_request_count >= self._stealth.max_requests_per_hour
+
+    def _check_session_limit(self) -> bool:
+        """Prüft ob die maximale Session-Dauer erreicht wurde."""
+        elapsed_minutes = (time.time() - self._session_start) / 60
+        return elapsed_minutes >= self._stealth.max_session_duration_minutes
+
+    def _calculate_stealth_delay(self) -> float:
+        """Berechnet einen langen, zufälligen Delay für Stealth-Modus."""
+        base_delay = random.uniform(
+            self._stealth.min_delay,
+            self._stealth.max_delay
+        )
+
+        # Zusätzliche Variation für noch menschlicheres Verhalten
+        if self._stealth.simulate_reading_time:
+            reading_time = random.uniform(2.0, 8.0)
+            base_delay += reading_time
+
+        return base_delay
+
+    def _should_take_coffee_break(self) -> bool:
+        """Prüft ob eine längere Pause eingelegt werden soll."""
+        return (
+            self._global_request_count > 0 and
+            self._global_request_count % self._stealth.requests_before_break == 0
+        )
+
+    def _get_coffee_break_duration(self) -> float:
+        """Gibt die Dauer einer Kaffeepause zurück."""
+        return random.uniform(
+            self._stealth.break_min_duration,
+            self._stealth.break_max_duration
+        )
+
+    def wait(self, domain: str) -> float:
+        """
+        Wartet mit Stealth-Delays vor dem nächsten Request.
+
+        Überschreibt die Basis-Methode mit konservativeren Delays
+        und zusätzlichen Sicherheitschecks.
+        """
+        # Prüfe Session-Limit
+        if self._check_session_limit():
+            logger.warning(
+                f"Session-Limit erreicht ({self._stealth.max_session_duration_minutes} Min). "
+                "Stoppe Scraping."
+            )
+            raise SessionLimitReached(
+                f"Maximale Session-Dauer von {self._stealth.max_session_duration_minutes} "
+                "Minuten erreicht."
+            )
+
+        # Prüfe stündliches Limit
+        if self._check_hourly_limit():
+            wait_until_next_hour = 3600 - (time.time() - self._hour_start)
+            logger.warning(
+                f"Stündliches Limit erreicht ({self._stealth.max_requests_per_hour} Requests). "
+                f"Warte {wait_until_next_hour/60:.1f} Minuten."
+            )
+            time.sleep(wait_until_next_hour)
+            self._hour_start = time.time()
+            self._hourly_request_count = 0
+
+        with self._lock:
+            state = self._get_domain_state(domain)
+
+            # Stealth-Delay berechnen
+            delay = self._calculate_stealth_delay()
+
+            # Kaffeepause einlegen
+            if self._should_take_coffee_break():
+                break_duration = self._get_coffee_break_duration()
+                logger.info(
+                    f"Kaffeepause nach {self._global_request_count} Requests: "
+                    f"{break_duration/60:.1f} Minuten"
+                )
+                delay += break_duration
+
+            # Zeit seit letztem Request berücksichtigen
+            time_since_last = time.time() - state.last_request_time
+            actual_delay = max(0, delay - time_since_last)
+
+            if actual_delay > 0:
+                if actual_delay > 60:
+                    logger.info(f"Stealth-Pause: {actual_delay/60:.1f} Minuten")
+                time.sleep(actual_delay)
+
+            # Update State
+            state.request_count += 1
+            state.last_request_time = time.time()
+            self._global_request_count += 1
+            self._hourly_request_count += 1
+
+            return actual_delay
+
+    def get_stats(self, domain: Optional[str] = None) -> dict:
+        """Erweiterte Stats mit Stealth-Informationen."""
+        stats = super().get_stats(domain)
+
+        if domain is None:
+            elapsed = time.time() - self._session_start
+            remaining = max(0, self._stealth.max_session_duration_minutes * 60 - elapsed)
+            stats.update({
+                "stealth_mode": True,
+                "session_elapsed_minutes": elapsed / 60,
+                "session_remaining_minutes": remaining / 60,
+                "hourly_request_count": self._hourly_request_count,
+                "hourly_limit": self._stealth.max_requests_per_hour
+            })
+
+        return stats
+
+
+class SessionLimitReached(Exception):
+    """Wird geworfen wenn das Session-Limit im Stealth-Modus erreicht wurde."""
+    pass

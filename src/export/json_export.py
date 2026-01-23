@@ -144,10 +144,13 @@ class JSONExporter:
             "region": stadt,
             "anzahl_leads": len(result.leads),
             "export_datum": datetime.now().isoformat(),
-            "format_version": "1.0"
+            "format_version": "2.0"  # Version erhöht für Multi-Source
         }
 
         if settings:
+            # Quellenangabe
+            meta["quellen"] = [s.value for s in settings.sources]
+
             meta["filter_kriterien"] = {
                 "website_check_depth": settings.website_check_depth.value,
                 "include_no_website": settings.filter.include_no_website,
@@ -156,11 +159,22 @@ class JSONExporter:
                 "min_quality_score": settings.filter.min_quality_score
             }
 
+        # DSGVO-Compliance Informationen
+        meta["dsgvo_konform"] = True
+        meta["ausgeschlossene_daten"] = [
+            "personenbezogene_reviews",
+            "review_autoren",
+            "nutzerfotos",
+            "owner_namen",
+            "mitarbeiter_namen"
+        ]
+        meta["rechtsgrundlage"] = "Berechtigtes Interesse (B2B-Geschäftsdaten)"
+
         return meta
 
     def _lead_to_dict(self, lead: Lead) -> dict:
         """Konvertiert Lead zu Export-Dictionary."""
-        return {
+        result = {
             # Identität
             "firmenname": lead.firmenname,
             "branche": lead.branche,
@@ -192,9 +206,19 @@ class JSONExporter:
 
             # Scores & Meta
             "qualitaet_score": lead.qualitaet_score,
-            "gelbe_seiten_url": lead.gelbe_seiten_url,
+            "quellen": [q.value for q in lead.quellen],
             "scrape_datum": lead.scrape_datum.isoformat()
         }
+
+        # Quellenspezifische URLs
+        if lead.gelbe_seiten_url:
+            result["gelbe_seiten_url"] = lead.gelbe_seiten_url
+        if lead.google_maps_url:
+            result["google_maps_url"] = lead.google_maps_url
+        if lead.google_maps_place_id:
+            result["google_maps_place_id"] = lead.google_maps_place_id
+
+        return result
 
     def to_json_string(
         self,

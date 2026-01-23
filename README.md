@@ -1,154 +1,194 @@
 # Gelbe Seiten Lead Scraper
 
-Ein modularer Python-Scraper für gelbeseiten.de - findet Unternehmen ohne/mit veralteter Website für Cold Outreach.
+Lead-Generierung für Cold Outreach: Findet Unternehmen ohne Website oder mit veralteter Website.
 
 ## Features
 
-- **Zwei-Stufen-Pipeline**: Gelbe Seiten Scraping + Website-Alters-Analyse
-- **Intelligente Website-Erkennung**: URL-Heuristik, Header-Check, HTML-Scan
-- **Konfigurierbare Filter**: Website-Status, Qualitätsscore, Pflichtfelder
-- **AI-Ready Export**: JSON-Format optimiert für automatisierte Outreach-Generierung
-- **Anti-Bot-Maßnahmen**: User-Agent Rotation, Rate Limiting, Human-like Delays
+- **Multi-Source Scraping**: Gelbe Seiten + Google Maps kombiniert
+- **Website-Analyse**: Erkennt alte/veraltete Websites automatisch
+- **Stealth-Modus**: Sicheres Scraping ohne Proxy (3h Sessions)
+- **DSGVO-konform**: Nur Geschäftsdaten, keine Personendaten
+- **Deduplizierung**: Automatischer Abgleich zwischen Quellen
+- **Export**: JSON und CSV
 
 ## Installation
 
 ```bash
 # Repository klonen
-git clone git@github.com:thetaroot/gelbeseiten.scraper.git
-cd gelbeseiten.scraper
+git clone git@github.com-thetaroot:thetaroot/gelbe-seiten-scraper.git
+cd gelbe-seiten-scraper
 
 # Dependencies installieren
 pip install -r requirements.txt
+
+# Playwright Browser installieren (für Google Maps)
+playwright install chromium
 ```
 
-### Requirements
-
-- Python 3.9+
-- requests
-- beautifulsoup4
-- lxml
-- pydantic
-
-## Verwendung
-
-### Basis-Aufruf
+## Schnellstart
 
 ```bash
-python main.py --branche "Friseur" --stadt "Berlin"
+# Einfache Suche (nur Gelbe Seiten)
+python main.py -b "Friseur" -s "Berlin" -l 50
+
+# Beide Quellen (vollständige Marktabdeckung)
+python main.py -b "Friseur" -s "Essen" --sources all -l 100
+
+# Stealth-Modus (sicher, ohne Proxy, 3 Stunden)
+python main.py -b "Friseur" -s "München" --sources all --stealth
 ```
 
-### Alle Optionen
+## Parameter
+
+### Pflicht-Parameter
+
+| Parameter | Kurz | Beschreibung |
+|-----------|------|--------------|
+| `--branche` | `-b` | Branche/Suchbegriff (z.B. "Friseur", "Zahnarzt") |
+| `--stadt` | `-s` | Stadt/Region (z.B. "Berlin", "NRW") |
+
+### Such-Optionen
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `--limit` | 100 | Maximale Anzahl Leads |
+| `--sources` | gelbe-seiten | Quellen: `gelbe-seiten`, `google-maps`, `all` |
+| `--max-pages` | 50 | Max. Suchergebnis-Seiten |
+
+### Stealth-Modus (sicheres Scraping ohne Proxy)
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `--stealth` | - | Aktiviert sicheres Scraping |
+| `--duration` | 180 | Max. Laufzeit in Minuten |
+
+**Was macht der Stealth-Modus?**
+- Lange, zufällige Delays (30-90 Sekunden zwischen Requests)
+- Kaffeepausen alle 12 Requests (3-8 Minuten)
+- Max. 50 Requests pro Stunde
+- Automatischer Stop nach Session-Limit
+
+**Empfohlene Nutzung:**
+```bash
+# Morgens 3 Stunden laufen lassen
+python main.py -b "Friseur" -s "Berlin" --sources all --stealth
+
+# Über Nacht 6 Stunden
+python main.py -b "Friseur" -s "Hamburg" --sources all --stealth --duration 360
+```
+
+### Website-Analyse
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `--website-check` | normal | Tiefe: `fast`, `normal`, `thorough` |
+| `--include-modern` | false | Auch moderne Websites inkludieren |
+
+### Filter
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `--min-quality` | 0 | Mindest-Qualitätsscore (0-100) |
+| `--require-phone` | false | Nur Leads mit Telefonnummer |
+| `--require-email` | false | Nur Leads mit E-Mail |
+
+### Proxy (optional)
+
+| Parameter | Beschreibung |
+|-----------|--------------|
+| `--use-proxy` | Proxy-Rotation aktivieren |
+| `--proxy-file` | Pfad zur Proxy-Liste |
+
+### Export
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `--output` | auto | Output-Dateiname |
+| `--format` | json | Format: `json`, `csv`, `both` |
+
+### Sonstige
+
+| Parameter | Beschreibung |
+|-----------|--------------|
+| `--verbose` | Ausführliche Ausgabe |
+| `--debug` | Debug-Modus |
+| `--quiet` | Nur Fehler ausgeben |
+| `--no-headless` | Browser sichtbar (Debugging) |
+
+## Beispiele
 
 ```bash
-python main.py \
-  --branche "Friseur" \
-  --stadt "Berlin" \
-  --limit 100 \
-  --website-check normal \
-  --format json \
-  --output leads.json \
-  --verbose
+# Kleine Stadt, schnell
+python main.py -b "Zahnarzt" -s "Bottrop" -l 30
+
+# Große Stadt, sicher über Nacht
+python main.py -b "Friseur" -s "Berlin" --sources all --stealth --duration 360
+
+# Nur Leads mit Kontaktdaten
+python main.py -b "Restaurant" -s "Hamburg" --require-phone --min-quality 50
+
+# Export in beide Formate
+python main.py -b "Handwerker" -s "Köln" --format both -o leads_handwerker
+
+# Mit Proxy-Rotation
+python main.py -b "Friseur" -s "München" --sources all --use-proxy --proxy-file proxies.txt
 ```
 
-### Parameter
+## Output
 
-| Parameter | Kurz | Default | Beschreibung |
-|-----------|------|---------|--------------|
-| `--branche` | `-b` | *erforderlich* | Suchbegriff/Branche |
-| `--stadt` | `-s` | *erforderlich* | Stadt/Region |
-| `--limit` | `-l` | 100 | Max. Anzahl Leads |
-| `--website-check` | `-w` | normal | Check-Tiefe: `fast`, `normal`, `thorough` |
-| `--format` | `-f` | json | Ausgabeformat: `json`, `csv`, `both` |
-| `--output` | `-o` | auto | Output-Dateiname |
-| `--min-quality` | | 0 | Mindest-Qualitätsscore (0-100) |
-| `--include-modern` | | false | Auch moderne Websites inkludieren |
-| `--require-phone` | | false | Nur Leads mit Telefonnummer |
-| `--require-email` | | false | Nur Leads mit E-Mail |
-| `--verbose` | `-v` | false | Ausführliche Ausgabe |
-| `--quiet` | `-q` | false | Nur Fehler ausgeben |
-
-### Beispiele
-
-```bash
-# 200 Friseure in München, nur ohne Website
-python main.py -b "Friseur" -s "München" -l 200
-
-# Zahnärzte in Hamburg, gründlicher Website-Check
-python main.py -b "Zahnarzt" -s "Hamburg" --website-check thorough
-
-# Restaurants in Köln, nur mit Telefon, CSV Export
-python main.py -b "Restaurant" -s "Köln" --require-phone --format csv
-
-# Schneller Scan für große Mengen
-python main.py -b "Handwerker" -s "Berlin" -l 500 --website-check fast
-```
-
-## Output-Format
-
-### JSON (AI-Ready)
+### JSON-Format
 
 ```json
 {
   "meta": {
     "branche": "Friseur",
     "region": "Berlin",
-    "anzahl_leads": 87,
-    "export_datum": "2024-01-20T15:30:00"
+    "quellen": ["gelbe_seiten", "google_maps"],
+    "dsgvo_konform": true
   },
   "leads": [
     {
-      "firmenname": "Salon Elegance",
-      "branche": "Friseursalon",
-      "telefon": "+49 30 1234567",
-      "email": null,
+      "firmenname": "Salon Müller",
+      "telefon": "+49 30 12345678",
+      "email": "info@salon-mueller.de",
       "website_url": null,
       "website_status": "keine",
       "adresse": {
         "strasse": "Hauptstraße",
-        "hausnummer": "42",
+        "hausnummer": "1",
         "plz": "10115",
-        "stadt": "Berlin",
-        "formatiert": "Hauptstraße 42, 10115 Berlin"
+        "stadt": "Berlin"
       },
-      "qualitaet_score": 65,
-      "gelbe_seiten_url": "https://..."
+      "quellen": ["gelbe_seiten", "google_maps"],
+      "oeffnungszeiten": {"Mo-Fr": "09:00-18:00"}
     }
-  ],
-  "stats": {
-    "total_gefunden": 150,
-    "total_exportiert": 87
-  }
+  ]
 }
 ```
 
-### CSV
+## Limits & Empfehlungen
 
-Semikolon-getrennt (`;`) für Excel-Kompatibilität mit UTF-8 BOM.
+| Szenario | Empfehlung |
+|----------|------------|
+| Kleine Stadt (<50 Leads) | Ohne Stealth, ohne Proxy |
+| Mittlere Stadt (50-200) | Mit `--stealth` |
+| Große Stadt (>200) | Mit `--stealth --duration 360` |
+| Sehr große Stadt (>500) | Auf mehrere Tage verteilen oder Proxy |
 
-## Website-Check Tiefen
+## DSGVO-Compliance
 
-| Tiefe | Methoden | Dauer/100 Websites | Genauigkeit |
-|-------|----------|-------------------|-------------|
-| `fast` | URL-Heuristik | ~0s | ~60% |
-| `normal` | URL + HEAD Request | ~50s | ~80% |
-| `thorough` | URL + HEAD + HTML | ~3-4min | ~90% |
+Der Scraper extrahiert **nur öffentliche Geschäftsdaten**:
+- Firmennamen, Adressen, Telefonnummern
+- Geschäfts-E-Mails, Website-URLs
+- Öffnungszeiten, Branchenkategorien
 
-### Erkannte Signale
+**Nicht extrahiert** (DSGVO):
+- Reviews/Bewertungstexte
+- Review-Autoren/Personennamen
+- Nutzerfotos
+- Inhabernamen
 
-**Alt/Veraltet:**
-- Alte Hosting-Plattformen (Geocities, bplaced, T-Online Home)
-- Website-Baukästen (Jimdo, Wix, wordpress.com)
-- Kein HTTPS
-- Alte Server-Versionen (Apache 2.2, IIS 6)
-- Alte PHP/CMS-Versionen
-- Keine Viewport-Meta (nicht responsive)
-- Flash-Embeds, Tabellen-Layout
-
-**Modern:**
-- Moderne Hosting (Vercel, Netlify, GitHub Pages)
-- Sicherheits-Header (HSTS, CSP)
-- Aktuelle CMS-Versionen
-- Schema.org, Open Graph Tags
+Details: `docs/DSGVO_COMPLIANCE.md`
 
 ## Projektstruktur
 
@@ -156,86 +196,42 @@ Semikolon-getrennt (`;`) für Excel-Kompatibilität mit UTF-8 BOM.
 gelbe-seiten-scraper/
 ├── main.py                 # CLI Entry Point
 ├── config/
-│   └── settings.py         # Zentrale Konfiguration
+│   └── settings.py         # Konfiguration
 ├── src/
-│   ├── client/
-│   │   ├── http.py         # HTTP Client
-│   │   └── rate_limiter.py # Rate Limiting
-│   ├── scraper/
-│   │   ├── gelbe_seiten.py # GS Scraper
-│   │   └── website_scanner.py
-│   ├── parser/
-│   │   ├── listing.py      # Suchergebnis-Parser
-│   │   └── detail.py       # Detail-Parser
-│   ├── analyzer/
-│   │   ├── url_heuristic.py
-│   │   ├── header_check.py
-│   │   └── html_scanner.py
-│   ├── pipeline/
-│   │   ├── orchestrator.py # Pipeline-Steuerung
-│   │   └── filters.py      # Lead-Filter
-│   ├── export/
-│   │   ├── json_export.py
-│   │   └── csv_export.py
-│   ├── models/
-│   │   └── lead.py         # Datenmodelle
-│   └── utils/
-│       └── user_agents.py
-└── tests/
+│   ├── client/             # HTTP, Browser, Proxy, Rate Limiting
+│   ├── scraper/            # Gelbe Seiten, Google Maps
+│   ├── parser/             # HTML Parser
+│   ├── analyzer/           # Website-Analyse
+│   ├── pipeline/           # Orchestrierung, Aggregation, Filter
+│   ├── export/             # JSON, CSV Export
+│   └── utils/              # Hilfsfunktionen
+├── tests/                  # Unit Tests
+└── docs/                   # Dokumentation
 ```
 
 ## Tests
 
 ```bash
-# Alle Tests ausführen
 pytest tests/ -v
-
-# Nur Model-Tests
-pytest tests/test_models.py -v
-
-# Mit Coverage
-pytest tests/ --cov=src --cov-report=html
 ```
 
-## API-Nutzung
+## Troubleshooting
 
-```python
-from src.pipeline.orchestrator import Pipeline
-from config.settings import Settings, WebsiteCheckDepth
-
-# Settings konfigurieren
-settings = Settings(
-    branche="Friseur",
-    stadt="Berlin",
-    max_leads=50,
-    website_check_depth=WebsiteCheckDepth.NORMAL
-)
-
-# Pipeline ausführen
-pipeline = Pipeline(settings)
-result = pipeline.run("Friseur", "Berlin", max_leads=50)
-
-# Ergebnisse verarbeiten
-for lead in result.leads:
-    print(f"{lead.firmenname}: {lead.website_status.value}")
+### "Playwright nicht installiert"
+```bash
+pip install playwright
+playwright install chromium
 ```
 
-## Konfiguration
+### "Keine Leads gefunden"
+- Stadt/Branche Schreibweise prüfen
+- `--verbose` für Details aktivieren
 
-Alle Einstellungen können über `config/settings.py` angepasst werden:
-
-- Rate Limiting (Delays, Pausen)
-- Scraper-Einstellungen (Timeouts, UA Rotation)
-- Filter-Defaults
-- Export-Optionen
-
-## Hinweise
-
-- **Respektiere die Nutzungsbedingungen** von gelbeseiten.de
-- **Verwende angemessene Delays** um Server nicht zu überlasten
-- **Daten sind nur für legitime Geschäftszwecke** zu verwenden
-- Die Website-Alters-Erkennung ist eine Heuristik und nicht 100% genau
+### "Google blockiert"
+- `--stealth` aktivieren
+- Session auf mehrere Tage verteilen
+- Proxy verwenden
 
 ## Lizenz
 
-Privates Projekt - nicht zur öffentlichen Nutzung bestimmt.
+MIT License
