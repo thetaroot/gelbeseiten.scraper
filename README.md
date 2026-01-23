@@ -5,10 +5,12 @@ Lead-Generierung für Cold Outreach: Findet Unternehmen ohne Website oder mit ve
 ## Features
 
 - **Multi-Source Scraping**: Gelbe Seiten + Google Maps kombiniert
+- **Alle Branchen Modus**: Komplette Stadt scannen (200+ Branchen)
 - **Website-Analyse**: Erkennt alte/veraltete Websites automatisch
-- **Stealth-Modus**: Sicheres Scraping ohne Proxy (3h Sessions)
+- **Stealth-Modus**: Sicheres Scraping ohne Proxy (bis 24h+ Sessions)
 - **DSGVO-konform**: Nur Geschäftsdaten, keine Personendaten
-- **Deduplizierung**: Automatischer Abgleich zwischen Quellen
+- **Deduplizierung**: Automatischer Abgleich zwischen Quellen & Branchen
+- **Checkpoint-System**: Fortsetzung nach Abbruch möglich
 - **Export**: JSON und CSV
 
 ## Installation
@@ -38,6 +40,36 @@ python main.py -b "Friseur" -s "Essen" --sources all -l 100
 python main.py -b "Friseur" -s "München" --sources all --stealth
 ```
 
+## Maximale Abdeckung: Alle Branchen einer Stadt
+
+Für maximale Cold-Outreach Listen: Alle Unternehmen einer Stadt finden.
+
+```bash
+# ALLE Branchen in Essen (24 Stunden laufen lassen)
+python main.py --all-branchen -s "Essen" --sources all --stealth --duration 1440
+
+# Nur Handwerker-Kategorie (schneller, gezielter)
+python main.py --kategorie handwerk -s "Köln" --stealth --duration 360
+
+# Nur Gastro-Kategorie
+python main.py --kategorie gastro -s "Hamburg" --stealth --duration 360
+```
+
+**Verfügbare Kategorien:**
+- `handwerk` - Maler, Elektriker, Sanitär, Dachdecker, etc.
+- `gesundheit` - Ärzte, Physiotherapie, Heilpraktiker, etc.
+- `beauty` - Friseur, Kosmetik, Nagelstudio, etc.
+- `gastro` - Restaurant, Café, Bäckerei, etc.
+- `auto` - Autowerkstatt, Fahrschule, Reifenservice, etc.
+- `beratung` - Steuerberater, Rechtsanwalt, Makler, etc.
+
+**Was passiert bei `--all-branchen`?**
+- Durchsucht 200+ Branchen automatisch
+- Dedupliziert über alle Branchen hinweg
+- Speichert Checkpoints alle 10 Branchen
+- Bei Abbruch: Einfach neu starten → setzt fort wo es aufgehört hat
+- Output: `leads_alle_branchen_{stadt}.json`
+
 ## Parameter
 
 ### Pflicht-Parameter
@@ -46,6 +78,10 @@ python main.py -b "Friseur" -s "München" --sources all --stealth
 |-----------|------|--------------|
 | `--branche` | `-b` | Branche/Suchbegriff (z.B. "Friseur", "Zahnarzt") |
 | `--stadt` | `-s` | Stadt/Region (z.B. "Berlin", "NRW") |
+| `--all-branchen` | - | Alle 200+ Branchen durchsuchen |
+| `--kategorie` | `-k` | Nur bestimmte Kategorie (handwerk, gastro, etc.) |
+
+**Hinweis:** Entweder `--branche`, `--all-branchen` oder `--kategorie` angeben.
 
 ### Such-Optionen
 
@@ -170,10 +206,11 @@ python main.py -b "Friseur" -s "München" --sources all --use-proxy --proxy-file
 
 | Szenario | Empfehlung |
 |----------|------------|
-| Kleine Stadt (<50 Leads) | Ohne Stealth, ohne Proxy |
-| Mittlere Stadt (50-200) | Mit `--stealth` |
-| Große Stadt (>200) | Mit `--stealth --duration 360` |
-| Sehr große Stadt (>500) | Auf mehrere Tage verteilen oder Proxy |
+| Einzelne Branche, kleine Stadt | Ohne Stealth, ohne Proxy |
+| Einzelne Branche, große Stadt | Mit `--stealth --duration 180` |
+| Kategorie (z.B. Handwerk) | Mit `--stealth --duration 360-720` |
+| Alle Branchen einer Stadt | Mit `--stealth --duration 1440` (24h) |
+| Maximale Abdeckung Großstadt | `--stealth --duration 2880` (48h) |
 
 ## DSGVO-Compliance
 
