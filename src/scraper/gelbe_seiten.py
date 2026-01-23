@@ -10,6 +10,7 @@ from typing import List, Optional, Generator
 from urllib.parse import quote_plus
 
 from src.client.http import HTTPClient, HTTPResponse
+from src.client.rate_limiter import SessionLimitReached
 from src.parser.listing import ListingParser
 from src.parser.detail import DetailParser
 from src.models.lead import Lead, RawListing
@@ -53,6 +54,9 @@ class GelbeSeitenScraper:
         self._listings_found = 0
         self._details_scraped = 0
         self._errors = []
+
+        # Partial Results (für SessionLimitReached)
+        self._partial_leads: List[Lead] = []
 
     def search(
         self,
@@ -178,33 +182,41 @@ class GelbeSeitenScraper:
             return leads
 
         # Mit Details: Scrape jede Detailseite
-        for i, listing in enumerate(listings):
-            if len(leads) >= max_leads:
-                break
+        try:
+            for i, listing in enumerate(listings):
+                if len(leads) >= max_leads:
+                    break
 
-            logger.debug(f"Scrape Detail {i+1}/{len(listings)}: {listing.name}")
+                logger.debug(f"Scrape Detail {i+1}/{len(listings)}: {listing.name}")
 
-            lead = self.scrape_detail(listing.detail_url, stadt, branche)
+                lead = self.scrape_detail(listing.detail_url, stadt, branche)
 
-            if lead:
-                # Ergänze Daten aus Listing falls im Detail nicht vorhanden
-                lead = self._merge_listing_data(lead, listing)
-                leads.append(lead)
-                self._details_scraped += 1
-            else:
-                # Fallback: Verwende Listing-Daten
-                fallback_lead = self._listing_to_lead(listing, stadt, branche)
-                if fallback_lead:
-                    leads.append(fallback_lead)
+                if lead:
+                    # Ergänze Daten aus Listing falls im Detail nicht vorhanden
+                    lead = self._merge_listing_data(lead, listing)
+                    leads.append(lead)
+                    self._details_scraped += 1
+                else:
+                    # Fallback: Verwende Listing-Daten
+                    fallback_lead = self._listing_to_lead(listing, stadt, branche)
+                    if fallback_lead:
+                        leads.append(fallback_lead)
 
-            # Progress-Log alle 10 Einträge
-            if (i + 1) % 10 == 0:
-                elapsed = time.time() - start_time
-                rate = (i + 1) / elapsed
-                logger.info(
-                    f"Progress: {i+1}/{len(listings)} Details ({len(leads)} Leads), "
-                    f"{rate:.1f} pro Sekunde"
-                )
+                # Progress-Log alle 10 Einträge
+                if (i + 1) % 10 == 0:
+                    elapsed = time.time() - start_time
+                    rate = (i + 1) / elapsed
+                    logger.info(
+                        f"Progress: {i+1}/{len(listings)} Details ({len(leads)} Leads), "
+                        f"{rate:.1f} pro Sekunde"
+                    )
+
+        except SessionLimitReached:
+            # Session-Limit erreicht - speichere bereits gesammelte Leads
+            logger.info(f"Session-Limit erreicht - speichere {len(leads)} bereits gesammelte Leads")
+            self._partial_leads = leads
+            # Exception erneut werfen damit die Pipeline sie sieht
+            raise
 
         elapsed_total = time.time() - start_time
         logger.info(
@@ -394,3 +406,13 @@ class GelbeSeitenScraper:
         self._listings_found = 0
         self._details_scraped = 0
         self._errors = []
+        self._partial_leads = []
+
+    @property
+    def partial_leads(self) -> List[Lead]:
+        """Gibt teilweise gesammelte Leads zurück (nach SessionLimitReached)."""
+        return self._partial_leads
+
+    def clear_partial_leads(self) -> None:
+        """Löscht gespeicherte Partial Leads."""
+        self._partial_leads = []

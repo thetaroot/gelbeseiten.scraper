@@ -214,10 +214,12 @@ class Pipeline:
         logger.info(f"=== Pipeline Start: '{branche}' in '{stadt}' ===")
         logger.info(f"Max Leads: {max_leads}, Quellen: {sources_str}, Website-Check: {self._settings.website_check_depth.value}")
 
-        try:
-            gs_leads: List[Lead] = []
-            gm_leads: List[Lead] = []
+        # Initialisiere leads für den Fall eines frühen Abbruchs
+        gs_leads: List[Lead] = []
+        gm_leads: List[Lead] = []
+        leads: List[Lead] = []
 
+        try:
             # === Stage 1a: Gelbe Seiten Scraping ===
             if DataSource.GELBE_SEITEN in sources:
                 self._report_progress("Stage 1a: Gelbe Seiten scrapen", 0, 100)
@@ -273,13 +275,29 @@ class Pipeline:
         except SessionLimitReached as e:
             # Stealth-Modus Session-Limit - kein Fehler, sondern normales Ende
             logger.info(f"Session-Limit erreicht: {e}")
-            result.leads = leads if 'leads' in dir() else []
+
+            # Sammle Partial Leads vom Gelbe Seiten Scraper
+            if self._gs_scraper.partial_leads:
+                gs_leads = self._gs_scraper.partial_leads
+                logger.info(f"Partial Leads von Gelbe Seiten: {len(gs_leads)}")
+
+            # Sammle alle bisher gesammelten Leads
+            if not leads:
+                leads = gs_leads + gm_leads
+
+            # Wende Filter an wenn Leads vorhanden
+            if leads:
+                leads = self._stage4_filter_leads(leads)
+
+            result.leads = leads
             result.total_gefunden = self._stats.gs_listings_found + self._stats.gm_listings_found
             result.total_gefiltert = len(result.leads)
             result.seiten_gescraped = self._stats.gs_pages_scraped + self._stats.gm_pages_scraped
             result.dauer_sekunden = self._stats.duration_seconds
             self._stats.leads_exported = len(result.leads)
             self._stats.end_time = datetime.now()
+
+            logger.info(f"Session beendet mit {len(result.leads)} Leads")
             return result
 
         except Exception as e:
