@@ -89,8 +89,8 @@ class GoogleMapsScraper:
         # Rate Limiting
         self._rate_limiter.wait("google.com")
 
-        # Navigiere zur Suchseite
-        response = self._browser.navigate(search_url, wait_until="networkidle")
+        # Navigiere zur Suchseite (domcontentloaded statt networkidle - Maps lädt ständig)
+        response = self._browser.navigate(search_url, wait_until="domcontentloaded")
 
         if not response.success:
             logger.error(f"Fehler beim Laden der Suche: {response.error}")
@@ -99,10 +99,13 @@ class GoogleMapsScraper:
 
         self._pages_scraped += 1
 
-        # Warte auf Suchergebnisse
+        # Warte etwas für JavaScript-Rendering
+        time.sleep(2.0 + random.uniform(0, 1.0))
+
+        # Warte auf Suchergebnisse (längerer Timeout für langsame Verbindungen)
         results_loaded = self._browser.wait_for_selector(
-            "div[data-result-index], div.Nv2PK",
-            timeout=10000
+            "div[data-result-index], div.Nv2PK, div[role='feed']",
+            timeout=20000
         )
 
         if not results_loaded:
